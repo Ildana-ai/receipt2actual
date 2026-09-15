@@ -1,6 +1,6 @@
 // Test suite for route (a) end to end: connection, vault, matching, marking.
 // Every run builds its own throwaway local (no-server) budget in a temp dir — no server,
-// no fixtures checked into the repo (tests.md).
+// no fixtures checked into the repo.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as api from '@actual-app/api';
@@ -34,7 +34,7 @@ function tmpDir(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
 
-// Six deliberately-overlapping transactions, same shape as the Phase L probes' fixture set.
+// Six deliberately-overlapping transactions.
 async function setupBudget() {
   const dataDir = tmpDir('r2a-test-data-');
   await api.init({ dataDir });
@@ -145,8 +145,7 @@ async function buildImageOnlyPdf(dir) {
   return file;
 }
 
-// Builds a plain PDF then AES-256-encrypts it with qpdf (confirmed present in Phase L,
-// findings.md). Returns null (test skips) rather than failing hard if qpdf isn't on this
+// Builds a plain PDF then AES-256-encrypts it with qpdf. Returns null (test skips) rather than failing hard if qpdf isn't on this
 // machine, since it's a system dependency of the fixture builder, not of the shipped tool.
 function qpdfAvailable() {
   try {
@@ -180,11 +179,13 @@ async function buildEncryptedPdf(dir) {
 test('sanitizeFilename strips whitespace, illegal chars, and lowercases the extension', () => {
   assert.equal(sanitizeFilename('my receipt.PDF'), 'my-receipt.pdf');
   assert.equal(sanitizeFilename('a:b/c\\d|e?f*g.jpg'), 'a-b-c-d-e-f-g.jpg');
+  assert.equal(sanitizeFilename('a&b^c%d!e$f`g;h(i)j\'k.pdf'), 'a-b-c-d-e-f-g-h-i-j-k.pdf', 'shell and cmd metacharacters');
+  assert.equal(sanitizeFilename('Bäckerei_Übersicht.PDF'), 'Bäckerei_Übersicht.pdf', 'letters of any script survive');
 });
 
 test('sanitizeFilename handles a Windows-style embedded path in the original filename', () => {
   // On a POSIX box, backslashes in a filename are just characters, not separators —
-  // this simulates a file whose original name carries Windows path junk (vault.md: strip
+  // this simulates a file whose original name carries Windows path junk (strip
   // Windows-illegal characters on every platform, not just when running on Windows).
   const result = sanitizeFilename('45.23_2026-09-01_sub\\dir\\my receipt.PDF');
   assert.equal(result, '45.23_2026-09-01_sub-dir-my-receipt.pdf');
@@ -282,24 +283,32 @@ test('double-ingest: re-running the same file on the same transaction is a no-op
   }
 });
 
-test('marker already present with a different note refuses rather than overwriting', async () => {
+test('a transaction with its own note keeps it: the marker is appended after one space, and a re-run is a noop', async () => {
   const { txns } = await setupBudget();
   const workDir = tmpDir('r2a-test-work-');
   const vaultRoot = tmpDir('r2a-test-vault-');
   try {
     const txn = txnByAmountDate(txns, -1200, '2026-09-10');
-    await api.updateNote(txn.id, 'a human wrote this note already');
+    await api.updateNote(txn.id, 'a human wrote this note already ');
     const file = writeReceiptFile(workDir, '12.00_2026-09-10_coffee.pdf');
 
     const result = await cmdAdd(file, { vault: vaultRoot, dryRun: false });
-    assert.equal(result.status, 'note-mismatch');
-    assert.equal(result.existingNote, 'a human wrote this note already');
-
-    const { entries } = readVaultIndex(vaultRoot);
-    assert.equal(entries.length, 0, 'nothing should be indexed on refusal');
+    assert.equal(result.status, 'paired');
 
     const note = await api.getNote(txn.id);
-    assert.equal(note.note, 'a human wrote this note already', 'note must be untouched');
+    assert.equal(note.note, `a human wrote this note already ${result.vaultPath}`);
+
+    const again = await cmdAdd(file, { vault: vaultRoot, dryRun: false });
+    assert.equal(again.status, 'noop');
+    const noteAgain = await api.getNote(txn.id);
+    assert.equal(noteAgain.note, note.note, 'second run must not append a second marker');
+
+    const verify = await cmdVerify({ vault: vaultRoot });
+    assert.equal(verify.exit_code, 0, 'verify must accept a marker that follows other text');
+
+    const shown = await cmdShow(txn.id, { dryRun: true });
+    assert.equal(shown.status, 'would-open');
+    assert.equal(shown.vaultPath, result.vaultPath, 'show must find the marker inside a longer note');
   } finally {
     await teardown();
   }
@@ -880,6 +889,7 @@ test('relink: rewrites every marker under --from to --to, note and index both up
   const oldRoot = tmpDir('r2a-test-vault-old-');
   try {
     const txn = txnByAmountDate(txns, -1200, '2026-09-10');
+    await api.updateNote(txn.id, 'split with Sam');
     const file = writeReceiptFile(workDir, '12.00_2026-09-10_coffee.pdf');
     const paired = await cmdAdd(file, { vault: oldRoot, dryRun: false });
 
@@ -895,7 +905,7 @@ test('relink: rewrites every marker under --from to --to, note and index both up
 
     const newVaultPath = paired.vaultPath.replace(oldRoot, newRoot);
     const note = await api.getNote(txn.id);
-    assert.equal(note.note, newVaultPath);
+    assert.equal(note.note, `split with Sam ${newVaultPath}`, 'relink swaps the marker word and keeps the rest of the note');
 
     const { entries } = readVaultIndex(newRoot);
     const latest = entries[entries.length - 1];
