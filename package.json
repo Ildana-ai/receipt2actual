@@ -1,6 +1,6 @@
 {
   "name": "receipt2actual",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Pair receipt files to Actual Budget transactions, locally. No cloud, no OCR, no telemetry.",
   "type": "module",
   "bin": {
