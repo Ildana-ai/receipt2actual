@@ -1,6 +1,6 @@
 // Test suite for route (a) end to end: connection, vault, matching, marking.
 // Every run builds its own throwaway local (no-server) budget in a temp dir — no server,
-// no fixtures checked into the repo (tests.md).
+// no fixtures checked into the repo.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as api from '@actual-app/api';
@@ -34,7 +34,7 @@ function tmpDir(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
 
-// Six deliberately-overlapping transactions, same shape as the Phase L probes' fixture set.
+// Six deliberately-overlapping transactions.
 async function setupBudget() {
   const dataDir = tmpDir('r2a-test-data-');
   await api.init({ dataDir });
@@ -145,8 +145,7 @@ async function buildImageOnlyPdf(dir) {
   return file;
 }
 
-// Builds a plain PDF then AES-256-encrypts it with qpdf (confirmed present in Phase L,
-// findings.md). Returns null (test skips) rather than failing hard if qpdf isn't on this
+// Builds a plain PDF then AES-256-encrypts it with qpdf. Returns null (test skips) rather than failing hard if qpdf isn't on this
 // machine, since it's a system dependency of the fixture builder, not of the shipped tool.
 function qpdfAvailable() {
   try {
@@ -186,7 +185,7 @@ test('sanitizeFilename strips whitespace, illegal chars, and lowercases the exte
 
 test('sanitizeFilename handles a Windows-style embedded path in the original filename', () => {
   // On a POSIX box, backslashes in a filename are just characters, not separators —
-  // this simulates a file whose original name carries Windows path junk (vault.md: strip
+  // this simulates a file whose original name carries Windows path junk (strip
   // Windows-illegal characters on every platform, not just when running on Windows).
   const result = sanitizeFilename('45.23_2026-09-01_sub\\dir\\my receipt.PDF');
   assert.equal(result, '45.23_2026-09-01_sub-dir-my-receipt.pdf');

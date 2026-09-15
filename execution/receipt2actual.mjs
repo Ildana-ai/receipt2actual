@@ -47,7 +47,7 @@ function connectionFromEnv(env) {
 }
 
 async function openBudget(conn, env) {
-  mkdirSync(conn.dataDir, { recursive: true }); // dataDir must pre-exist (VERIFIED-2026-08-29.md)
+  mkdirSync(conn.dataDir, { recursive: true }); // dataDir must pre-exist
   if (conn.mode === 'server') {
     await api.init({
       dataDir: conn.dataDir,
@@ -71,7 +71,7 @@ async function openBudget(conn, env) {
 const ILLEGAL_FILENAME_CHARS = /[^\p{L}\p{N}._-]/gu;
 
 // Shared by resolveVaultRoot and relink's --to: absolute, no whitespace anywhere, per
-// vault.md — Actual's note-link regex stops matching at the first space.
+// Actual's note-link regex stops matching at the first space.
 function validateVaultPath(resolved) {
   if (/\s/.test(resolved)) {
     const err = new Error(
@@ -93,7 +93,7 @@ function resolveVaultRoot({ vaultFlag, env }) {
 }
 
 // Applied on every platform, not just Windows, so a vault built on one OS relinks cleanly
-// on another (vault.md).
+// on another.
 function sanitizeFilename(name) {
   const ext = extname(name).toLowerCase();
   const base = name.slice(0, name.length - extname(name).length);
@@ -131,7 +131,7 @@ function appendVaultIndexLine(vaultRoot, entry) {
   appendFileSync(join(vaultRoot, 'vault.jsonl'), JSON.stringify(entry) + '\n');
 }
 
-// "Latest wins" per txn_id (verify.md) — vault.jsonl is append-only, so a relink correction
+// "Latest wins" per txn_id — vault.jsonl is append-only, so a relink correction
 // or re-pair is simply the last line for that txn_id, not a rewrite in place.
 function latestByTxnId(entries) {
   const latestByTxn = new Map();
@@ -171,7 +171,7 @@ function parseFilenameConvention(filename) {
     ? Math.round(parseFloat(amountStr) * 100)
     : parseInt(amountStr, 10);
   // No explicit '-' in the filename is a debit; v1 never infers a credit from filename
-  // alone (matching.md) — every route-(a) match is queried as a negative amount.
+  // alone — every route-(a) match is queried as a negative amount.
   const amountCents = -Math.abs(parsed);
   return { amountCents, date: dateStr };
 }
@@ -184,7 +184,7 @@ function addDays(dateStr, days) {
 
 async function queryCandidates(amountCents, anchorDate, days = 3) {
   const { q } = api;
-  // GOTCHA (matching.md, probe_query.mjs case 6): {date:{$gte,$lte}} on one key silently
+  // GOTCHA: {date:{$gte,$lte}} on one key silently
   // drops a bound. Each bound must be its own clause under an explicit $and.
   const result = await api.aqlQuery(
     q('transactions')
@@ -197,7 +197,7 @@ async function queryCandidates(amountCents, anchorDate, days = 3) {
       })
       .select('*'),
   );
-  // "exact cents first, then the +/-3-day window" (matching.md route (c)): the query is
+  // "exact cents first, then the +/-3-day window" (route (c)): the query is
   // already exact-cents-only, so this orders by closeness to the anchor date, exact-date
   // matches first.
   const dayDiff = (d) => Math.abs((Date.parse(d) - Date.parse(anchorDate)) / 86400000);
@@ -217,7 +217,7 @@ function formatCents(cents) {
 
 // ------------------------------------------------------------------ matching, route (b)
 
-// Regexes match the probe's (probe_pdf.mjs), run globally so an ambiguous multi-total
+// Regexes run globally so an ambiguous multi-total
 // receipt is detected and refused rather than silently taking the first match.
 const DATE_RE = /Date:\s*(\d{4}-\d{2}-\d{2})/g;
 const TOTAL_RE = /Total:\s*\$?([\d.]+)/g;
@@ -230,7 +230,7 @@ function refusePdf(code, message) {
 
 // Extracts a single unambiguous total + date from a text-layer PDF. Throws (never guesses)
 // when there is no text layer, the PDF is password-protected, or the text yields zero or
-// more than one candidate total/date (matching.md route (b)).
+// more than one candidate total/date (route (b)).
 async function extractPdfTotalAndDate(filePath) {
   const data = new Uint8Array(readFileSync(filePath));
   const loadingTask = getDocument({ data });
@@ -309,7 +309,7 @@ async function checkNoteIdempotency(txnId, markerString) {
 }
 
 // Shared tail end of every pairing, once a single transaction has been settled on — by
-// route (a)/(b) auto-match, or by a route (c) pick. Order of operations (marking.md):
+// route (a)/(b) auto-match, or by a route (c) pick. Order of operations:
 // double-ingest guard, then the note idempotency guard, then copy, then note write, then
 // the index append — index append is always last.
 async function finalizePairing(file, txn, vaultRoot, opts, route) {
@@ -363,7 +363,7 @@ async function cmdAdd(file, opts) {
     throw err;
   }
 
-  // Wire order (matching.md): (a) filename convention, else (b) PDF text layer if it's a
+  // Wire order: (a) filename convention, else (b) PDF text layer if it's a
   // PDF, else tell the user to run `pair` directly. A route match that resolves to zero or
   // more than one candidate is terminal here — `add` never auto-picks and never silently
   // chains into (b) or interactive prompting; the user re-runs with `pair`.
@@ -476,8 +476,8 @@ function formatCandidateLine(n, c, maps) {
   );
 }
 
-// Parses a user- or flag-supplied amount the same way route (a) parses a filename amount
-// (matching.md): a decimal is dollars-and-cents, a bare integer is dollars, and no explicit
+// Parses a user- or flag-supplied amount the same way route (a) parses a filename amount:
+// a decimal is dollars-and-cents, a bare integer is dollars, and no explicit
 // sign means a debit — except here the caller may supply an explicit sign for a credit.
 function parseAmountFlag(str) {
   const m = /^(-?\d+(?:\.\d+)?)$/.exec(str.trim());
@@ -590,7 +590,7 @@ async function cmdPair(file, opts) {
 
   if (amountCents === null || date === null) {
     if (opts.pick != null) {
-      requireInteractive('pair --pick needs --amount and --date to search with (no filename/PDF parsing in pair — cli.md)');
+      requireInteractive('pair --pick needs --amount and --date to search with (no filename/PDF parsing in pair)');
     }
     ({ amountCents, date } = await promptForAmountDate());
   }
@@ -645,7 +645,7 @@ const PAIR_OK_STATUSES = new Set(['paired', 'noop', 'dry-run']);
 // ------------------------------------------------------------------ verify
 
 // Walks every vault file under vaultRoot (excluding vault.jsonl itself), returning absolute
-// paths — used to find orphan_files (vault.md/verify.md).
+// paths — used to find orphan_files .
 function walkVaultFiles(vaultRoot) {
   const indexPath = resolve(join(vaultRoot, 'vault.jsonl'));
   const found = [];
@@ -852,7 +852,7 @@ const SHOW_OK_STATUSES = new Set(['opened', 'would-open']);
 // ------------------------------------------------------------------ relink
 
 // Rewrites every current marker whose vault_path starts with `from` to the equivalent path
-// under `to` (marking.md). Does not move files on disk — that's the user's `mv`/`Move-Item`,
+// under `to`. Does not move files on disk — that's the user's `mv`/`Move-Item`,
 // done before running this for real. `--dry-run` previews without calling updateNote or
 // appending to the index.
 async function cmdRelink(opts) {
