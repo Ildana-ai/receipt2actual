@@ -1,0 +1,13 @@
+receipt2actual — brand notice
+
+Kept separate from LICENSE so that automated licence detection reads this
+project correctly as MIT.
+
+receipt2actual has no embedded third-party code. It depends on @actual-app/api
+(https://github.com/actualbudget/actual) and pdfjs-dist
+(https://github.com/mozilla/pdf.js), both installed from npm under their own
+projects' MIT/Apache-2.0 licences.
+
+Brand
+  The Ildana name, logo, and brand artwork are not covered by the MIT licence
+  and may not be used to represent other projects or organizations.

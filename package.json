@@ -1,0 +1,30 @@
+{
+  "name": "receipt2actual",
+  "version": "0.1.0",
+  "description": "Pair receipt files to Actual Budget transactions, locally. No cloud, no OCR, no telemetry.",
+  "type": "module",
+  "bin": {
+    "receipt2actual": "./execution/receipt2actual.mjs"
+  },
+  "main": "./execution/receipt2actual.mjs",
+  "files": [
+    "execution/receipt2actual.mjs",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@actual-app/api": "^26.9.0",
+    "pdfjs-dist": "^6.3.289"
+  },
+  "devDependencies": {
+    "pdf-lib": "^1.17.1",
+    "pngjs": "^7.0.0"
+  }
+}
