@@ -180,6 +180,8 @@ async function buildEncryptedPdf(dir) {
 test('sanitizeFilename strips whitespace, illegal chars, and lowercases the extension', () => {
   assert.equal(sanitizeFilename('my receipt.PDF'), 'my-receipt.pdf');
   assert.equal(sanitizeFilename('a:b/c\\d|e?f*g.jpg'), 'a-b-c-d-e-f-g.jpg');
+  assert.equal(sanitizeFilename('a&b^c%d!e$f`g;h(i)j\'k.pdf'), 'a-b-c-d-e-f-g-h-i-j-k.pdf', 'shell and cmd metacharacters');
+  assert.equal(sanitizeFilename('Bäckerei_Übersicht.PDF'), 'Bäckerei_Übersicht.pdf', 'letters of any script survive');
 });
 
 test('sanitizeFilename handles a Windows-style embedded path in the original filename', () => {
@@ -282,24 +284,32 @@ test('double-ingest: re-running the same file on the same transaction is a no-op
   }
 });
 
-test('marker already present with a different note refuses rather than overwriting', async () => {
+test('a transaction with its own note keeps it: the marker is appended after one space, and a re-run is a noop', async () => {
   const { txns } = await setupBudget();
   const workDir = tmpDir('r2a-test-work-');
   const vaultRoot = tmpDir('r2a-test-vault-');
   try {
     const txn = txnByAmountDate(txns, -1200, '2026-09-10');
-    await api.updateNote(txn.id, 'a human wrote this note already');
+    await api.updateNote(txn.id, 'a human wrote this note already ');
     const file = writeReceiptFile(workDir, '12.00_2026-09-10_coffee.pdf');
 
     const result = await cmdAdd(file, { vault: vaultRoot, dryRun: false });
-    assert.equal(result.status, 'note-mismatch');
-    assert.equal(result.existingNote, 'a human wrote this note already');
-
-    const { entries } = readVaultIndex(vaultRoot);
-    assert.equal(entries.length, 0, 'nothing should be indexed on refusal');
+    assert.equal(result.status, 'paired');
 
     const note = await api.getNote(txn.id);
-    assert.equal(note.note, 'a human wrote this note already', 'note must be untouched');
+    assert.equal(note.note, `a human wrote this note already ${result.vaultPath}`);
+
+    const again = await cmdAdd(file, { vault: vaultRoot, dryRun: false });
+    assert.equal(again.status, 'noop');
+    const noteAgain = await api.getNote(txn.id);
+    assert.equal(noteAgain.note, note.note, 'second run must not append a second marker');
+
+    const verify = await cmdVerify({ vault: vaultRoot });
+    assert.equal(verify.exit_code, 0, 'verify must accept a marker that follows other text');
+
+    const shown = await cmdShow(txn.id, { dryRun: true });
+    assert.equal(shown.status, 'would-open');
+    assert.equal(shown.vaultPath, result.vaultPath, 'show must find the marker inside a longer note');
   } finally {
     await teardown();
   }
@@ -880,6 +890,7 @@ test('relink: rewrites every marker under --from to --to, note and index both up
   const oldRoot = tmpDir('r2a-test-vault-old-');
   try {
     const txn = txnByAmountDate(txns, -1200, '2026-09-10');
+    await api.updateNote(txn.id, 'split with Sam');
     const file = writeReceiptFile(workDir, '12.00_2026-09-10_coffee.pdf');
     const paired = await cmdAdd(file, { vault: oldRoot, dryRun: false });
 
@@ -895,7 +906,7 @@ test('relink: rewrites every marker under --from to --to, note and index both up
 
     const newVaultPath = paired.vaultPath.replace(oldRoot, newRoot);
     const note = await api.getNote(txn.id);
-    assert.equal(note.note, newVaultPath);
+    assert.equal(note.note, `split with Sam ${newVaultPath}`, 'relink swaps the marker word and keeps the rest of the note');
 
     const { entries } = readVaultIndex(newRoot);
     const latest = entries[entries.length - 1];

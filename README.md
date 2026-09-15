@@ -19,7 +19,7 @@ receipt with no readable text is refused, not guessed at.
 
 ## Install
 
-Needs [Node](https://nodejs.org) 20 or newer.
+Needs [Node](https://nodejs.org) 22.13 or newer (the PDF reader it uses needs it).
 
 ```bash
 git clone https://github.com/Ildana-ai/receipt2actual.git
@@ -131,12 +131,19 @@ touching disk or the budget.
 
 ## What the note looks like
 
-Once paired, the transaction's note in Actual becomes the receipt's absolute
-path on disk — nothing else, no wrapper text:
+Once paired, the receipt's absolute path on disk is added to the transaction's
+note in Actual, after anything you already wrote there — no wrapper text, one
+space in between:
 
 ```
 /home/you/ActualReceipts/2026/09/a1b2c3d4__costco-receipt.pdf
 ```
+
+```
+Split with Sam /home/you/ActualReceipts/2026/09/a1b2c3d4__costco-receipt.pdf
+```
+
+Your own note is never replaced. Pairing the same receipt again does nothing.
 
 **In the desktop app**, clicking that note reveals the file in Finder or
 Explorer. **In the browser or PWA**, clicking it copies the path to your

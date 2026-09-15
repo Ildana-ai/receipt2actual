@@ -14,7 +14,7 @@ import {
   readdirSync,
   realpathSync,
 } from 'node:fs';
-import { resolve, join, dirname, extname, basename, sep } from 'node:path';
+import { resolve, join, dirname, extname, basename, sep, isAbsolute } from 'node:path';
 import { homedir, platform } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline/promises';
@@ -65,7 +65,10 @@ async function openBudget(conn, env) {
 
 // ------------------------------------------------------------------ vault
 
-const ILLEGAL_FILENAME_CHARS = /[<>:"/\\|?*\x00-\x1f]/g;
+// Anything that is not a letter or digit (any script), dot, underscore or dash. Shell and cmd
+// metacharacters (& ^ % ! $ ` ; quotes, parens) are in here on purpose: `show` hands the path to
+// the OS opener, and on Windows that goes through cmd.
+const ILLEGAL_FILENAME_CHARS = /[^\p{L}\p{N}._-]/gu;
 
 // Shared by resolveVaultRoot and relink's --to: absolute, no whitespace anywhere, per
 // vault.md — Actual's note-link regex stops matching at the first space.
@@ -275,11 +278,34 @@ async function extractPdfTotalAndDate(filePath) {
 
 // ------------------------------------------------------------------ marking
 
+// Actual's note-link parser (desktop-client/src/notes/linkParser.ts) splits the note on
+// whitespace and links any word that is an absolute path, so the marker can sit after a note
+// the user already wrote. It is appended with one space, never replaces anything.
+function noteHasMarker(noteText, marker) {
+  return (noteText ?? '').split(/\s+/).includes(marker);
+}
+
+function noteWithMarker(noteText, marker) {
+  const existing = (noteText ?? '').trimEnd();
+  return existing ? `${existing} ${marker}` : marker;
+}
+
+function noteWithMarkerReplaced(noteText, oldMarker, newMarker) {
+  const words = (noteText ?? '').split(/(\s+)/);
+  const replaced = words.map((w) => (w === oldMarker ? newMarker : w)).join('');
+  return noteHasMarker(replaced, newMarker) ? replaced : noteWithMarker(replaced, newMarker);
+}
+
+// The last absolute-path word in a note is the current marker (relink appends the newest one).
+function markerFromNote(noteText) {
+  const paths = (noteText ?? '').split(/\s+/).filter((w) => w && isAbsolute(w));
+  return paths.length ? paths[paths.length - 1] : null;
+}
+
 async function checkNoteIdempotency(txnId, markerString) {
   const note = await api.getNote(txnId);
-  if (!note || !note.note) return 'proceed';
-  if (note.note === markerString) return 'noop';
-  return 'refuse';
+  if (noteHasMarker(note?.note, markerString)) return 'noop';
+  return 'proceed';
 }
 
 // Shared tail end of every pairing, once a single transaction has been settled on — by
@@ -304,18 +330,14 @@ async function finalizePairing(file, txn, vaultRoot, opts, route) {
   if (idempotency === 'noop') {
     return { status: 'noop', vaultPath, txnId: txn.id };
   }
-  if (idempotency === 'refuse') {
-    const existing = await api.getNote(txn.id);
-    return { status: 'note-mismatch', txnId: txn.id, existingNote: existing?.note ?? null };
-  }
-
   if (opts.dryRun) {
     return { status: 'dry-run', vaultPath, txnId: txn.id };
   }
 
   mkdirSync(dirname(vaultPath), { recursive: true });
   copyFileSync(file, vaultPath);
-  await api.updateNote(txn.id, vaultPath);
+  const existingNote = await api.getNote(txn.id);
+  await api.updateNote(txn.id, noteWithMarker(existingNote?.note, vaultPath));
   appendVaultIndexLine(vaultRoot, {
     txn_id: txn.id,
     file_sha256: sha256,
@@ -424,11 +446,6 @@ function printAddResult(result, opts) {
     case 'conflict':
       process.stdout.write(
         `this file is already paired to a different transaction (${result.existing.txn_id}) at ${result.existing.vault_path}\n`,
-      );
-      break;
-    case 'note-mismatch':
-      process.stdout.write(
-        `transaction ${result.txnId} already has a different note — refusing to overwrite: ${JSON.stringify(result.existingNote)}\n`,
       );
       break;
   }
@@ -615,11 +632,6 @@ function printPairResult(result, opts) {
         `this file is already paired to a different transaction (${result.existing.txn_id}) at ${result.existing.vault_path}\n`,
       );
       break;
-    case 'note-mismatch':
-      process.stdout.write(
-        `transaction ${result.txnId} already has a different note — refusing to overwrite: ${JSON.stringify(result.existingNote)}\n`,
-      );
-      break;
     case 'no-candidates':
     case 'no-pairing-made':
     case 'no-such-transaction':
@@ -680,7 +692,7 @@ async function buildVerifyReport(vaultRoot) {
         reason = 'txn_missing';
       } else {
         const note = await api.getNote(e.txn_id);
-        if (!note || note.note !== e.vault_path) {
+        if (!noteHasMarker(note?.note, e.vault_path)) {
           reason = 'note_marker_missing_or_changed';
         }
       }
@@ -786,24 +798,25 @@ async function cmdShow(arg, opts) {
 
   const txn = found.txn;
   const note = await api.getNote(txn.id);
-  if (!note?.note) {
+  const marker = markerFromNote(note?.note);
+  if (!marker) {
     return { status: 'no-marker', txnId: txn.id, message: `transaction ${txn.id} has no receipt marker` };
   }
-  if (!existsSync(note.note)) {
+  if (!existsSync(marker)) {
     return {
       status: 'file-missing',
       txnId: txn.id,
-      vaultPath: note.note,
-      message: `transaction ${txn.id} is marked ${note.note} but that file doesn't exist on disk — run 'verify' or 'relink'`,
+      vaultPath: marker,
+      message: `transaction ${txn.id} is marked ${marker} but that file doesn't exist on disk — run 'verify' or 'relink'`,
     };
   }
 
   if (opts.dryRun) {
-    return { status: 'would-open', txnId: txn.id, vaultPath: note.note };
+    return { status: 'would-open', txnId: txn.id, vaultPath: marker };
   }
-  const child = openInOsViewer(note.note);
+  const child = openInOsViewer(marker);
   child.unref();
-  return { status: 'opened', txnId: txn.id, vaultPath: note.note };
+  return { status: 'opened', txnId: txn.id, vaultPath: marker };
 }
 
 function printShowResult(result, opts) {
@@ -874,7 +887,9 @@ async function cmdRelink(opts) {
   const failures = [];
   for (const e of rewritten) {
     try {
-      await api.updateNote(e.txn_id, e.vault_path);
+      const note = await api.getNote(e.txn_id);
+      const oldPath = from + e.vault_path.slice(to.length);
+      await api.updateNote(e.txn_id, noteWithMarkerReplaced(note?.note, oldPath, e.vault_path));
       appendVaultIndexLine(vaultRoot, e);
     } catch (err) {
       failures.push({ txn_id: e.txn_id, vault_path: e.vault_path, error: err.message });
