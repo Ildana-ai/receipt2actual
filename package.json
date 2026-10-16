@@ -21,7 +21,7 @@
   "license": "MIT",
   "dependencies": {
     "@actual-app/api": "^26.9.0",
-    "pdfjs-dist": "^6.3.289"
+    "pdfjs-dist": "^6.4.299"
   },
   "devDependencies": {
     "pdf-lib": "^1.17.1",
